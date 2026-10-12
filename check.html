@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>GLB 模型结构检查</title>
+    <style>
+        body { font-family: monospace; background: #1e1e2e; color: #cdd6f4; padding: 24px; }
+        h1 { color: #f9e2af; }
+        h2 { color: #89b4fa; margin-top: 24px; }
+        pre { background: #313244; padding: 12px; border-radius: 8px; white-space: pre-wrap; line-height: 1.6; }
+        .ok { color: #a6e3a1; } .warn { color: #f38ba8; }
+    </style>
+</head>
+<body>
+<h1>🔍 GLB 模型结构检查报告</h1>
+<pre id="out">正在加载 models/character.glb ...</pre>
+
+<script type="importmap">
+    { "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    } }
+</script>
+<script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    const out = document.getElementById('out');
+    new GLTFLoader().load('models/character.glb', gltf => {
+        let text = '';
+        // 1. 节点树
+        text += '== 节点结构（缩进表示层级） ==\n';
+        let meshCount = 0, boneCount = 0;
+        function walk(obj, depth) {
+            const type = obj.isBone ? '[骨骼]' : obj.isMesh ? '[网格]' : obj.isSkinnedMesh ? '[蒙皮网格]' : '[组]';
+            text += '  '.repeat(depth) + (obj.name || '(未命名)') + ' ' + type + '\n';
+            if (obj.isMesh) meshCount++;
+            if (obj.isBone) boneCount++;
+            obj.children.forEach(c => walk(c, depth + 1));
+        }
+        walk(gltf.scene, 0);
+
+        // 2. 动画
+        text += '\n== 动画 ==\n';
+        if (gltf.animations.length === 0) text += '（没有动画）\n';
+        gltf.animations.forEach(a => text += `动画名: "${a.name}"  时长: ${a.duration.toFixed(2)}s\n`);
+
+        // 3. 结论
+        text += '\n== 结论 ==\n';
+        text += `网格部件数: ${meshCount}\n骨骼数: ${boneCount}\n`;
+        text += boneCount > 0
+            ? '✅ 模型带骨骼！可以直接套 Mixamo 动画或用代码驱动骨骼。\n'
+            : meshCount > 3
+                ? '✅ 模型由多个独立部件组成，很可能可以用代码做"假走路"摆腿效果。\n'
+                : '⚠️ 模型是一整块网格且无骨骼，代码摇不动腿，需要用 Mixamo 自动绑骨。\n';
+        out.textContent = text;
+    }, undefined, err => {
+        out.textContent = '❌ 加载失败：' + err.message +
+            '\n\n请确认：\n1. 模型放在 models/character.glb\n2. 通过 http://localhost:8000/check.html 访问（不是双击打开）';
+    });
+</script>
+</body>
+</html>

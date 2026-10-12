@@ -142,9 +142,10 @@
     }
     function loadGLB(url) {
         return new Promise(resolve => {
-            loader.load(url, gltf => resolve(gltf.scene), undefined, () => resolve(null));
+            loader.load(url, gltf => resolve(gltf), undefined, () => resolve(null));
         });
     }
+
 
     /* ================= 兜底模型 ================= */
     function makeFallbackCharacter() {
@@ -222,6 +223,8 @@
     /* ================= 角色 ================= */
     const player = new THREE.Group();
     let characterModel = makeFallbackCharacter();
+    let mixer = null, walkAction = null;
+
     player.add(characterModel);
     player.position.set(0, 0.5, 8);
     scene.add(player);
@@ -356,25 +359,33 @@
         bumpProgress('资源加载完成');
         if (char) {
             player.remove(characterModel);
-            const box = new THREE.Box3().setFromObject(char);
+            const charModel = char.scene;
+            const box = new THREE.Box3().setFromObject(charModel);
             const size = box.getSize(new THREE.Vector3());
-            char.scale.setScalar(1.5 / Math.max(size.x, size.y, size.z));
-            const box2 = new THREE.Box3().setFromObject(char);
-            char.position.y = -box2.min.y;
-            char.traverse(o => { if (o.isMesh) o.castShadow = true; });
-            characterModel = char;
+            charModel.scale.setScalar(1.5 / Math.max(size.x, size.y, size.z));
+            const box2 = new THREE.Box3().setFromObject(charModel);
+            charModel.position.y = -box2.min.y;
+            charModel.traverse(o => { if (o.isMesh) o.castShadow = true; });
+            characterModel = charModel;
             player.add(characterModel);
+            // 接入 Walk 动画
+            mixer = new THREE.AnimationMixer(charModel);
+            if (char.animations.length > 0) {
+                walkAction = mixer.clipAction(char.animations[0]);
+            }
         }
         if (palace) {
-            const box = new THREE.Box3().setFromObject(palace);
+            const palaceModel = palace.scene;
+            const box = new THREE.Box3().setFromObject(palaceModel);
             const size = box.getSize(new THREE.Vector3());
-            palace.scale.setScalar(40 / Math.max(size.x, size.y, size.z));
-            palace.position.set(0, 0, -80);
-            palace.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-            scene.add(palace);
+            palaceModel.scale.setScalar(40 / Math.max(size.x, size.y, size.z));
+            palaceModel.position.set(0, 0, -80);
+            palaceModel.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+            scene.add(palaceModel);
         } else {
             scene.add(makeFallbackPalace());
         }
+
         bumpProgress('准备就绪！');
         setTimeout(() => {
             const l = document.getElementById('loading');
@@ -481,11 +492,51 @@
 
         const moving = Math.abs(playerVel.x) + Math.abs(playerVel.z) > 1;
         if (onGround && moving) {
-            const squash = 1 + Math.sin(t * 14) * 0.06;
+            // 身体弹跳 + 摇摆
+            const hop = Math.abs(Math.sin(t * 10)) * 0.12;
+            const sway = Math.sin(t * 10) * 0.14;
+            const squash = 1 + Math.sin(t * 20) * 0.05;
+            characterModel.position.y = hop;
+            characterModel.rotation.z = sway;
             characterModel.scale.set(2 - squash, squash, 2 - squash);
+            // 走路动画：跑起来播放，停下/跳起淡出
+            if (walkAction) {
+                const shouldWalk = moving && onGround;
+                if (shouldWalk && !walkAction.isRunning()) walkAction.reset().fadeIn(0.15).play();
+                if (!shouldWalk && walkAction.isRunning()) walkAction.fadeOut(0.15);
+            }
+            if (mixer) mixer.update(dt);
+
+        } else if (!onGround) {
+            // 跳跃：双腿分开
+            characterModel.position.y = 0;
+            characterModel.rotation.z = 0;
+            characterModel.scale.set(0.92, 1.12, 0.92);
+            // 走路动画：跑起来播放，停下/跳起淡出
+            if (walkAction) {
+                const shouldWalk = moving && onGround;
+                if (shouldWalk && !walkAction.isRunning()) walkAction.reset().fadeIn(0.15).play();
+                if (!shouldWalk && walkAction.isRunning()) walkAction.fadeOut(0.15);
+            }
+            if (mixer) mixer.update(dt);
+
         } else {
-            characterModel.scale.lerp(new THREE.Vector3(1, 1, 1), 0.2);
+            // 站立：呼吸 + 腿归位
+            const breathe = 1 + Math.sin(t * 2.5) * 0.02;
+            characterModel.position.y = 0;
+            characterModel.rotation.z *= 0.9;
+            characterModel.scale.set(2 - breathe, breathe, 2 - breathe);
+            // 走路动画：跑起来播放，停下/跳起淡出
+            if (walkAction) {
+                const shouldWalk = moving && onGround;
+                if (shouldWalk && !walkAction.isRunning()) walkAction.reset().fadeIn(0.15).play();
+                if (!shouldWalk && walkAction.isRunning()) walkAction.fadeOut(0.15);
+            }
+            if (mixer) mixer.update(dt);
+
         }
+
+
         characterModel.visible = performance.now() > state.invincibleUntil || Math.floor(t * 12) % 2 === 0;
 
         coins.forEach(c => {

@@ -32,7 +32,7 @@ echo 关闭本窗口即可停止游戏服务器
 echo.
 
 :: 延迟 1 秒后自动打开浏览器（在后台执行，不影响服务器启动）
-start "" /b cmd /c "timeout /t 1 /nobreak >nul && start http://localhost:8000"
+start "" /b cmd /c "timeout /t 1 /nobreak >nul && start http://172.16.0.207:8000"
 
 :: 启动 HTTP 服务器（端口 8000）
 %PY% -m http.server 8000
